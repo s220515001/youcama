@@ -2,8 +2,8 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>摄像头全屏</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>摄像头全屏 · 前后摄</title>
     <style>
         /* === 全局重置 & 基础 === */
         *,
@@ -23,14 +23,20 @@
             justify-content: center;
             color: #fff;
             overflow: hidden;
+            touch-action: manipulation;
+            /* 防止双击缩放 */;
         }
 
         /* === 主容器 === */
         .app {
             width: 100%;
             max-width: 1000px;
-            padding: 20px;
+            padding: 12px;
             margin: 0 auto;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
         }
 
         /* === 视频包装器 === */
@@ -45,6 +51,7 @@
             align-items: center;
             justify-content: center;
             transition: box-shadow 0.3s ease;
+            flex-shrink: 0;
         }
 
         .video-wrapper.active {
@@ -58,8 +65,8 @@
             object-fit: cover;
             display: block;
             background: #0d0d14;
+            /* 默认镜像，由 JS 控制，后摄不镜像，前摄镜像 */
             transform: scaleX(-1);
-            /* 镜像，更自然的自拍视角 */;
         }
 
         /* === 占位 / 启动界面 === */
@@ -144,6 +151,7 @@
             letter-spacing: 0.3px;
             position: relative;
             overflow: hidden;
+            touch-action: manipulation;
         }
 
         .btn::after {
@@ -193,17 +201,18 @@
             }
         }
 
-        /* === 控制栏 === */
+        /* === 控制栏 (底部) === */
         .controls {
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 16px;
-            margin-top: 24px;
+            gap: 14px;
+            margin-top: 20px;
             flex-wrap: wrap;
             opacity: 0;
             transform: translateY(12px);
             transition: opacity 0.5s ease 0.2s, transform 0.5s ease 0.2s;
+            padding: 0 4px;
         }
 
         .controls.visible {
@@ -214,8 +223,9 @@
         .controls .btn-ctrl {
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             gap: 8px;
-            padding: 12px 28px;
+            padding: 12px 20px;
             border: none;
             border-radius: 60px;
             font-size: 15px;
@@ -228,6 +238,9 @@
             transition: background 0.25s ease, transform 0.2s ease, box-shadow 0.3s ease;
             border: 1px solid rgba(255, 255, 255, 0.06);
             letter-spacing: 0.2px;
+            touch-action: manipulation;
+            flex: 0 1 auto;
+            min-width: 64px;
         }
 
         .controls .btn-ctrl:hover {
@@ -236,12 +249,12 @@
         }
 
         .controls .btn-ctrl:active {
-            transform: scale(0.96);
+            transform: scale(0.94);
         }
 
         .controls .btn-ctrl svg {
-            width: 20px;
-            height: 20px;
+            width: 22px;
+            height: 22px;
             fill: none;
             stroke: currentColor;
             stroke-width: 2;
@@ -250,21 +263,34 @@
             flex-shrink: 0;
         }
 
+        .controls .btn-ctrl .label {
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        /* 各按钮主题 */
         .controls .btn-ctrl.fullscreen {
             background: rgba(79, 122, 255, 0.2);
             border-color: rgba(79, 122, 255, 0.3);
             color: #8aacff;
         }
-
         .controls .btn-ctrl.fullscreen:hover {
             background: rgba(79, 122, 255, 0.3);
+        }
+
+        .controls .btn-ctrl.switch-cam {
+            background: rgba(0, 200, 150, 0.15);
+            border-color: rgba(0, 200, 150, 0.2);
+            color: #6fdfc0;
+        }
+        .controls .btn-ctrl.switch-cam:hover {
+            background: rgba(0, 200, 150, 0.25);
         }
 
         .controls .btn-ctrl.danger {
             color: #ff6b7a;
             border-color: rgba(255, 107, 122, 0.15);
         }
-
         .controls .btn-ctrl.danger:hover {
             background: rgba(255, 107, 122, 0.12);
         }
@@ -332,10 +358,11 @@
             color: #ff7a8a;
             font-size: 15px;
             text-align: center;
-            max-width: 360px;
+            max-width: 340px;
             z-index: 10;
             display: none;
             line-height: 1.6;
+            pointer-events: none;
         }
 
         .error-msg.show {
@@ -354,29 +381,25 @@
             }
         }
 
-        /* === 全屏样式适配 === */
+        /* === 全屏样式适配 (手机 + 桌面) === */
         .video-wrapper:-webkit-full-screen {
-            border-radius: 0;
-            aspect-ratio: auto;
-            width: 100vw;
-            height: 100vh;
+            border-radius: 0 !important;
+            aspect-ratio: auto !important;
+            width: 100vw !important;
+            height: 100vh !important;
         }
-
         .video-wrapper:fullscreen {
-            border-radius: 0;
-            aspect-ratio: auto;
-            width: 100vw;
-            height: 100vh;
+            border-radius: 0 !important;
+            aspect-ratio: auto !important;
+            width: 100vw !important;
+            height: 100vh !important;
         }
-
         .video-wrapper:-webkit-full-screen #video {
             object-fit: contain;
         }
-
         .video-wrapper:fullscreen #video {
             object-fit: contain;
         }
-
         .video-wrapper:-webkit-full-screen .controls,
         .video-wrapper:fullscreen .controls {
             position: fixed;
@@ -385,57 +408,65 @@
             transform: translateX(-50%);
             margin-top: 0;
             z-index: 20;
+            width: auto;
+            max-width: 92vw;
         }
-
         .video-wrapper:-webkit-full-screen .status,
         .video-wrapper:fullscreen .status {
             bottom: 100px;
         }
-
         .video-wrapper:-webkit-full-screen .placeholder,
         .video-wrapper:fullscreen .placeholder {
-            border-radius: 0;
+            border-radius: 0 !important;
         }
 
-        /* === 响应式 === */
+        /* === 响应式 (手机优先) === */
         @media (max-width: 640px) {
             .app {
-                padding: 12px;
+                padding: 8px;
+                justify-content: center;
             }
-
             .video-wrapper {
                 border-radius: 20px;
                 aspect-ratio: 16 / 10;
             }
-
             .placeholder h2 {
                 font-size: 22px;
             }
-
             .placeholder p {
                 font-size: 14px;
                 max-width: 280px;
+                margin-bottom: 24px;
             }
-
             .btn {
                 padding: 12px 28px;
                 font-size: 15px;
             }
-
-            .controls .btn-ctrl {
-                padding: 10px 18px;
-                font-size: 13px;
+            .controls {
+                gap: 10px;
+                margin-top: 16px;
             }
-
-            .controls .btn-ctrl span {
+            .controls .btn-ctrl {
+                padding: 10px 14px;
+                font-size: 13px;
+                min-width: 56px;
+                flex: 0 1 auto;
+            }
+            .controls .btn-ctrl .label {
+                font-size: 12px;
+            }
+            .controls .btn-ctrl svg {
+                width: 20px;
+                height: 20px;
+            }
+            /* 在小屏上隐藏部分文字，只显示图标 */
+            .controls .btn-ctrl .label {
                 display: none;
             }
-
-            .controls .btn-ctrl svg {
-                width: 22px;
-                height: 22px;
+            .controls .btn-ctrl.fullscreen .label {
+                display: inline;
+                /* 全屏保留文字 */;
             }
-
             .status {
                 font-size: 12px;
                 padding: 4px 14px;
@@ -454,6 +485,21 @@
             }
             .placeholder h2 {
                 font-size: 19px;
+            }
+            .controls .btn-ctrl {
+                padding: 8px 12px;
+                min-width: 48px;
+            }
+            .controls .btn-ctrl svg {
+                width: 18px;
+                height: 18px;
+            }
+        }
+
+        /* 当屏幕宽度大于640px时，显示完整标签 */
+        @media (min-width: 641px) {
+            .controls .btn-ctrl .label {
+                display: inline !important;
             }
         }
     </style>
@@ -475,7 +521,7 @@
                     </svg>
                 </div>
                 <h2>打开摄像头</h2>
-                <p>点击下方按钮，授权后即可看到您的实时画面</p>
+                <p>点击下方按钮，授权后即可看到实时画面<br />支持切换前后摄像头</p>
                 <button class="btn" id="startBtn">
                     <span class="spinner"></span>
                     <span class="btn-text">📷 启动摄像头</span>
@@ -494,6 +540,15 @@
 
         <!-- 控制栏 -->
         <div class="controls" id="controls">
+            <button class="btn-ctrl switch-cam" id="switchCamBtn" title="切换前后摄像头">
+                <svg viewBox="0 0 24 24">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                    <polyline points="12 9 15 12 12 15" />
+                    <line x1="9" y1="12" x2="15" y2="12" />
+                </svg>
+                <span class="label">翻转</span>
+            </button>
+
             <button class="btn-ctrl fullscreen" id="fullscreenBtn">
                 <svg viewBox="0 0 24 24">
                     <polyline points="15 3 21 3 21 9" />
@@ -501,7 +556,7 @@
                     <line x1="21" y1="3" x2="14" y2="10" />
                     <line x1="3" y1="21" x2="10" y2="14" />
                 </svg>
-                <span>全屏</span>
+                <span class="label">全屏</span>
             </button>
 
             <button class="btn-ctrl danger" id="stopBtn">
@@ -510,7 +565,7 @@
                     <line x1="8" y1="8" x2="16" y2="16" />
                     <line x1="16" y1="8" x2="8" y2="16" />
                 </svg>
-                <span>关闭</span>
+                <span class="label">关闭</span>
             </button>
         </div>
     </div>
@@ -526,12 +581,15 @@
             const startBtn = document.getElementById('startBtn');
             const stopBtn = document.getElementById('stopBtn');
             const fullscreenBtn = document.getElementById('fullscreenBtn');
+            const switchCamBtn = document.getElementById('switchCamBtn');
             const controls = document.getElementById('controls');
             const status = document.getElementById('status');
             const errorMsg = document.getElementById('errorMsg');
 
             let stream = null;
             let isStreaming = false;
+            let currentFacingMode = 'user'; // 'user' 或 'environment'
+            let isFront = true; // 是否前摄
 
             // === 工具函数 ===
             function showError(msg) {
@@ -552,27 +610,43 @@
                 }
             }
 
-            // === 核心：启动摄像头 ===
-            async function startCamera() {
-                if (isStreaming) return;
+            // 更新镜像：前摄镜像，后摄不镜像 (更自然的体验)
+            function updateMirror() {
+                if (isFront) {
+                    video.style.transform = 'scaleX(-1)';
+                } else {
+                    video.style.transform = 'scaleX(1)';
+                }
+            }
+
+            // === 核心：启动摄像头 (可指定 facingMode) ===
+            async function startCamera(facingMode = 'user') {
+                if (isStreaming) {
+                    // 如果已经在流，先停止再重新启动（切换摄像头时）
+                    stopCameraTracks();
+                }
 
                 setLoading(true);
                 errorMsg.classList.remove('show');
 
                 try {
-                    // 请求权限 + 获取流
-                    stream = await navigator.mediaDevices.getUserMedia({
+                    const constraints = {
                         video: {
+                            facingMode: facingMode,
                             width: { ideal: 1280 },
                             height: { ideal: 720 },
-                            facingMode: 'user'
                         },
                         audio: false
-                    });
+                    };
 
-                    // 绑定到 video
+                    stream = await navigator.mediaDevices.getUserMedia(constraints);
                     video.srcObject = stream;
                     await video.play();
+
+                    // 记录当前 facing
+                    currentFacingMode = facingMode;
+                    isFront = (facingMode === 'user');
+                    updateMirror();
 
                     isStreaming = true;
                     wrapper.classList.add('active');
@@ -580,14 +654,15 @@
                     controls.classList.add('visible');
                     status.classList.add('visible');
 
-                    // 重置按钮状态
                     setLoading(false);
                     startBtn.querySelector('.btn-text').textContent = '✅ 已启动';
+
+                    // 启用切换按钮
+                    switchCamBtn.disabled = false;
 
                 } catch (err) {
                     console.error('摄像头启动失败:', err);
                     setLoading(false);
-
                     let msg = '无法访问摄像头';
                     if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
                         msg = '🛑 摄像头权限被拒绝，请在浏览器设置中允许访问。';
@@ -601,32 +676,55 @@
                         msg = '🛑 摄像头权限被拒绝，请在浏览器设置中允许访问。';
                     }
                     showError(msg);
+                    // 重置状态
+                    isStreaming = false;
+                    wrapper.classList.remove('active');
+                    placeholder.classList.remove('hidden');
+                    controls.classList.remove('visible');
+                    status.classList.remove('visible');
+                    startBtn.querySelector('.btn-text').textContent = '📷 启动摄像头';
+                    switchCamBtn.disabled = true;
                 }
             }
 
-            // === 停止摄像头 ===
-            function stopCamera() {
-                if (!isStreaming) return;
-
-                // 停止所有轨道
+            // 停止所有轨道 (不改变UI状态)
+            function stopCameraTracks() {
                 if (stream) {
                     stream.getTracks().forEach(track => track.stop());
                     stream = null;
                 }
                 video.srcObject = null;
                 isStreaming = false;
+            }
 
+            // === 停止摄像头 (完整关闭) ===
+            function stopCamera() {
+                if (!isStreaming && !stream) return;
+                stopCameraTracks();
                 wrapper.classList.remove('active');
                 placeholder.classList.remove('hidden');
                 controls.classList.remove('visible');
                 status.classList.remove('visible');
                 startBtn.querySelector('.btn-text').textContent = '📷 启动摄像头';
                 setLoading(false);
+                switchCamBtn.disabled = true;
 
-                // 如果处于全屏，退出
                 if (document.fullscreenElement) {
                     document.exitFullscreen().catch(() => {});
                 }
+            }
+
+            // === 切换前后摄像头 ===
+            async function switchCamera() {
+                if (!isStreaming) {
+                    showError('请先启动摄像头');
+                    return;
+                }
+
+                // 切换 facingMode
+                const nextMode = (currentFacingMode === 'user') ? 'environment' : 'user';
+                // 尝试用新模式启动 (内部会停止旧流)
+                await startCamera(nextMode);
             }
 
             // === 全屏切换 ===
@@ -637,51 +735,50 @@
                 }
 
                 if (!document.fullscreenElement) {
-                    // 进入全屏
                     wrapper.requestFullscreen().catch(err => {
-                        // 某些浏览器可能拒绝
                         console.warn('全屏请求被拒绝:', err);
                         showError('无法进入全屏模式，请手动点击浏览器全屏按钮');
                     });
                 } else {
-                    // 退出全屏
                     document.exitFullscreen().catch(() => {});
                 }
             }
 
-            // === 监听全屏变化，更新按钮文字 ===
+            // === 全屏变化事件 ===
             function onFullscreenChange() {
                 const isFull = !!document.fullscreenElement;
-                const span = fullscreenBtn.querySelector('span');
+                const label = fullscreenBtn.querySelector('.label');
                 if (isFull) {
-                    span.textContent = '退出全屏';
-                    // 全屏时可能隐藏指针
+                    label.textContent = '退出';
                     wrapper.style.cursor = 'none';
                 } else {
-                    span.textContent = '全屏';
+                    label.textContent = '全屏';
                     wrapper.style.cursor = '';
                 }
             }
 
             // === 键盘快捷键 ===
             function onKeydown(e) {
-                // F 键全屏
                 if (e.key === 'f' || e.key === 'F') {
                     e.preventDefault();
                     toggleFullscreen();
                 }
-                // ESC 退出全屏（浏览器自带，但我们也处理一下）
+                if (e.key === 'c' || e.key === 'C') {
+                    e.preventDefault();
+                    switchCamera();
+                }
                 if (e.key === 'Escape' && document.fullscreenElement) {
-                    // 让浏览器处理，但我们也更新UI
                     setTimeout(onFullscreenChange, 100);
                 }
             }
 
             // === 事件绑定 ===
-            startBtn.addEventListener('click', startCamera);
+            startBtn.addEventListener('click', () => startCamera('user'));
             stopBtn.addEventListener('click', stopCamera);
             fullscreenBtn.addEventListener('click', toggleFullscreen);
+            switchCamBtn.addEventListener('click', switchCamera);
 
+            // 全屏事件兼容
             document.addEventListener('fullscreenchange', onFullscreenChange);
             document.addEventListener('webkitfullscreenchange', onFullscreenChange);
             document.addEventListener('mozfullscreenchange', onFullscreenChange);
@@ -689,12 +786,12 @@
 
             document.addEventListener('keydown', onKeydown);
 
-            // 点击 wrapper 中的视频区域也可切换全屏（方便）
+            // 双击切换全屏
             video.addEventListener('dblclick', () => {
                 if (isStreaming) toggleFullscreen();
             });
 
-            // === 页面关闭/离开时释放资源 ===
+            // 页面关闭释放资源
             window.addEventListener('beforeunload', () => {
                 if (stream) {
                     stream.getTracks().forEach(track => track.stop());
@@ -704,21 +801,24 @@
                 }
             });
 
-            // === 额外：如果用户点击占位区域，也可触发启动 ===
+            // 点击占位启动
             placeholder.addEventListener('click', (e) => {
-                // 防止点击按钮时触发两次
                 if (e.target.closest('.btn')) return;
-                if (!isStreaming) startCamera();
+                if (!isStreaming) startCamera('user');
             });
 
-            // === 提示用户快捷键 ===
-            console.log('📷 快捷键: F = 全屏切换');
+            // 提示
+            console.log('📷 快捷键: F = 全屏, C = 切换摄像头');
 
-            // === 检测浏览器是否支持 getUserMedia ===
+            // 检测支持
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 showError('您的浏览器不支持摄像头访问，请使用最新版 Chrome / Firefox / Edge');
                 startBtn.disabled = true;
+                switchCamBtn.disabled = true;
             }
+
+            // 初始禁用切换
+            switchCamBtn.disabled = true;
 
         })();
     </script>
