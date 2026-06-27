@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>摄像头全屏 · 前后摄</title>
+    <title>摄像头 · 变焦 + 平移</title>
     <style>
-        /* === 全局重置 & 基础 === */
+        /* === 全局重置 === */
         *,
         *::before,
         *::after {
@@ -24,7 +24,6 @@
             color: #fff;
             overflow: hidden;
             touch-action: manipulation;
-            /* 防止双击缩放 */;
         }
 
         /* === 主容器 === */
@@ -52,21 +51,39 @@
             justify-content: center;
             transition: box-shadow 0.3s ease;
             flex-shrink: 0;
+            touch-action: none;
+            /* 由 JS 控制触摸行为 */;
         }
 
         .video-wrapper.active {
             box-shadow: 0 25px 60px rgba(0, 0, 0, 0.9), 0 0 0 2px rgba(99, 140, 255, 0.25);
         }
 
-        /* === 视频元素 === */
+        /* === 视频容器 (用于裁剪 + 平移) === */
+        .video-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            border-radius: inherit;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
         #video {
             width: 100%;
             height: 100%;
             object-fit: cover;
             display: block;
             background: #0d0d14;
-            /* 默认镜像，由 JS 控制，后摄不镜像，前摄镜像 */
             transform: scaleX(-1);
+            /* 默认镜像，由 JS 控制 */
+            transition: none;
+            will-change: transform;
+            /* 开启GPU加速 */;
         }
 
         /* === 占位 / 启动界面 === */
@@ -86,13 +103,11 @@
             text-align: center;
             border-radius: 28px;
         }
-
         .placeholder.hidden {
             opacity: 0;
             visibility: hidden;
             pointer-events: none;
         }
-
         .placeholder .icon {
             width: 80px;
             height: 80px;
@@ -102,9 +117,7 @@
             align-items: center;
             justify-content: center;
             margin-bottom: 28px;
-            transition: transform 0.3s ease;
         }
-
         .placeholder .icon svg {
             width: 44px;
             height: 44px;
@@ -114,7 +127,6 @@
             stroke-linecap: round;
             stroke-linejoin: round;
         }
-
         .placeholder h2 {
             font-size: 26px;
             font-weight: 600;
@@ -124,7 +136,6 @@
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
-
         .placeholder p {
             color: rgba(255, 255, 255, 0.55);
             font-size: 16px;
@@ -153,7 +164,6 @@
             overflow: hidden;
             touch-action: manipulation;
         }
-
         .btn::after {
             content: '';
             position: absolute;
@@ -161,22 +171,18 @@
             background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), transparent 60%);
             pointer-events: none;
         }
-
         .btn:hover:not(:disabled) {
             transform: scale(1.03);
             box-shadow: 0 12px 40px rgba(79, 122, 255, 0.45);
         }
-
         .btn:active:not(:disabled) {
             transform: scale(0.97);
         }
-
         .btn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
             transform: none;
         }
-
         .btn .spinner {
             display: none;
             width: 20px;
@@ -186,15 +192,12 @@
             border-radius: 50%;
             animation: spin 0.7s linear infinite;
         }
-
         .btn.loading .spinner {
             display: inline-block;
         }
-
         .btn.loading .btn-text {
             display: none;
         }
-
         @keyframes spin {
             to {
                 transform: rotate(360deg);
@@ -206,29 +209,27 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 14px;
-            margin-top: 20px;
+            gap: 10px;
+            margin-top: 18px;
             flex-wrap: wrap;
             opacity: 0;
             transform: translateY(12px);
             transition: opacity 0.5s ease 0.2s, transform 0.5s ease 0.2s;
             padding: 0 4px;
         }
-
         .controls.visible {
             opacity: 1;
             transform: translateY(0);
         }
-
         .controls .btn-ctrl {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
-            padding: 12px 20px;
+            gap: 6px;
+            padding: 10px 16px;
             border: none;
             border-radius: 60px;
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 500;
             color: #fff;
             background: rgba(255, 255, 255, 0.07);
@@ -240,21 +241,18 @@
             letter-spacing: 0.2px;
             touch-action: manipulation;
             flex: 0 1 auto;
-            min-width: 64px;
+            min-width: 52px;
         }
-
         .controls .btn-ctrl:hover {
             background: rgba(255, 255, 255, 0.14);
             transform: translateY(-2px);
         }
-
         .controls .btn-ctrl:active {
             transform: scale(0.94);
         }
-
         .controls .btn-ctrl svg {
-            width: 22px;
-            height: 22px;
+            width: 20px;
+            height: 20px;
             fill: none;
             stroke: currentColor;
             stroke-width: 2;
@@ -262,13 +260,10 @@
             stroke-linejoin: round;
             flex-shrink: 0;
         }
-
         .controls .btn-ctrl .label {
             font-size: 13px;
             font-weight: 500;
         }
-
-        /* 各按钮主题 */
         .controls .btn-ctrl.fullscreen {
             background: rgba(79, 122, 255, 0.2);
             border-color: rgba(79, 122, 255, 0.3);
@@ -277,7 +272,6 @@
         .controls .btn-ctrl.fullscreen:hover {
             background: rgba(79, 122, 255, 0.3);
         }
-
         .controls .btn-ctrl.switch-cam {
             background: rgba(0, 200, 150, 0.15);
             border-color: rgba(0, 200, 150, 0.2);
@@ -286,13 +280,94 @@
         .controls .btn-ctrl.switch-cam:hover {
             background: rgba(0, 200, 150, 0.25);
         }
-
+        .controls .btn-ctrl.zoom-btn {
+            background: rgba(255, 200, 50, 0.12);
+            border-color: rgba(255, 200, 50, 0.15);
+            color: #f5d36a;
+            padding: 10px 14px;
+        }
+        .controls .btn-ctrl.zoom-btn:hover {
+            background: rgba(255, 200, 50, 0.2);
+        }
         .controls .btn-ctrl.danger {
             color: #ff6b7a;
             border-color: rgba(255, 107, 122, 0.15);
         }
         .controls .btn-ctrl.danger:hover {
             background: rgba(255, 107, 122, 0.12);
+        }
+
+        /* === 变焦控件 (在视频区域左下角) === */
+        .zoom-control {
+            position: absolute;
+            bottom: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 8;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 10px 18px;
+            border-radius: 60px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            opacity: 0;
+            transition: opacity 0.4s ease, transform 0.3s ease;
+            transform: translateX(-50%) translateY(10px);
+            pointer-events: none;
+            white-space: nowrap;
+            min-width: 160px;
+            justify-content: center;
+        }
+        .zoom-control.visible {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+            pointer-events: auto;
+        }
+        .zoom-control input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 120px;
+            height: 4px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.25);
+            outline: none;
+            flex-shrink: 0;
+        }
+        .zoom-control input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #6b8cff, #a78bfa);
+            cursor: pointer;
+            box-shadow: 0 2px 12px rgba(79, 122, 255, 0.5);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+        }
+        .zoom-control input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+        }
+        .zoom-control input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #6b8cff, #a78bfa);
+            cursor: pointer;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+        }
+        .zoom-control .zoom-value {
+            font-size: 14px;
+            font-weight: 500;
+            color: #fff;
+            min-width: 38px;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.06);
+            padding: 2px 8px;
+            border-radius: 30px;
+            font-variant-numeric: tabular-nums;
         }
 
         /* === 状态指示 === */
@@ -317,11 +392,9 @@
             opacity: 0;
             transition: opacity 0.5s ease;
         }
-
         .status.visible {
             opacity: 1;
         }
-
         .status .dot {
             width: 7px;
             height: 7px;
@@ -330,7 +403,6 @@
             display: inline-block;
             animation: pulse-dot 1.8s ease-in-out infinite;
         }
-
         @keyframes pulse-dot {
             0%,
             100% {
@@ -364,12 +436,10 @@
             line-height: 1.6;
             pointer-events: none;
         }
-
         .error-msg.show {
             display: block;
             animation: fadeSlideIn 0.4s ease;
         }
-
         @keyframes fadeSlideIn {
             from {
                 opacity: 0;
@@ -381,7 +451,7 @@
             }
         }
 
-        /* === 全屏样式适配 (手机 + 桌面) === */
+        /* === 全屏 === */
         .video-wrapper:-webkit-full-screen {
             border-radius: 0 !important;
             aspect-ratio: auto !important;
@@ -403,7 +473,7 @@
         .video-wrapper:-webkit-full-screen .controls,
         .video-wrapper:fullscreen .controls {
             position: fixed;
-            bottom: 40px;
+            bottom: 30px;
             left: 50%;
             transform: translateX(-50%);
             margin-top: 0;
@@ -411,16 +481,20 @@
             width: auto;
             max-width: 92vw;
         }
+        .video-wrapper:-webkit-full-screen .zoom-control,
+        .video-wrapper:fullscreen .zoom-control {
+            bottom: 100px;
+        }
         .video-wrapper:-webkit-full-screen .status,
         .video-wrapper:fullscreen .status {
-            bottom: 100px;
+            bottom: 90px;
         }
         .video-wrapper:-webkit-full-screen .placeholder,
         .video-wrapper:fullscreen .placeholder {
             border-radius: 0 !important;
         }
 
-        /* === 响应式 (手机优先) === */
+        /* === 响应式 === */
         @media (max-width: 640px) {
             .app {
                 padding: 8px;
@@ -443,29 +517,32 @@
                 font-size: 15px;
             }
             .controls {
-                gap: 10px;
-                margin-top: 16px;
+                gap: 8px;
+                margin-top: 14px;
             }
             .controls .btn-ctrl {
-                padding: 10px 14px;
-                font-size: 13px;
-                min-width: 56px;
-                flex: 0 1 auto;
-            }
-            .controls .btn-ctrl .label {
+                padding: 8px 12px;
                 font-size: 12px;
+                min-width: 48px;
             }
-            .controls .btn-ctrl svg {
-                width: 20px;
-                height: 20px;
-            }
-            /* 在小屏上隐藏部分文字，只显示图标 */
             .controls .btn-ctrl .label {
                 display: none;
             }
             .controls .btn-ctrl.fullscreen .label {
                 display: inline;
-                /* 全屏保留文字 */;
+            }
+            .zoom-control {
+                bottom: 60px;
+                padding: 8px 14px;
+                min-width: 140px;
+                gap: 10px;
+            }
+            .zoom-control input[type="range"] {
+                width: 80px;
+            }
+            .zoom-control .zoom-value {
+                font-size: 13px;
+                min-width: 32px;
             }
             .status {
                 font-size: 12px;
@@ -473,7 +550,6 @@
                 bottom: 14px;
             }
         }
-
         @media (max-width: 400px) {
             .placeholder .icon {
                 width: 64px;
@@ -487,16 +563,17 @@
                 font-size: 19px;
             }
             .controls .btn-ctrl {
-                padding: 8px 12px;
-                min-width: 48px;
+                padding: 6px 10px;
+                min-width: 40px;
             }
             .controls .btn-ctrl svg {
                 width: 18px;
                 height: 18px;
             }
+            .zoom-control input[type="range"] {
+                width: 60px;
+            }
         }
-
-        /* 当屏幕宽度大于640px时，显示完整标签 */
         @media (min-width: 641px) {
             .controls .btn-ctrl .label {
                 display: inline !important;
@@ -509,8 +586,10 @@
     <div class="app">
         <div class="video-wrapper" id="videoWrapper">
 
-            <!-- 视频元素 -->
-            <video id="video" autoplay playsinline></video>
+            <!-- 视频容器 (用于平移) -->
+            <div class="video-container" id="videoContainer">
+                <video id="video" autoplay playsinline></video>
+            </div>
 
             <!-- 占位启动界面 -->
             <div class="placeholder" id="placeholder">
@@ -521,7 +600,7 @@
                     </svg>
                 </div>
                 <h2>打开摄像头</h2>
-                <p>点击下方按钮，授权后即可看到实时画面<br />支持切换前后摄像头</p>
+                <p>点击下方按钮，授权后即可看到实时画面<br />支持变焦、平移 · 前后摄</p>
                 <button class="btn" id="startBtn">
                     <span class="spinner"></span>
                     <span class="btn-text">📷 启动摄像头</span>
@@ -536,6 +615,13 @@
                 <span class="dot"></span>
                 <span>直播中</span>
             </div>
+
+            <!-- 变焦控件 -->
+            <div class="zoom-control" id="zoomControl">
+                <span style="color:rgba(255,255,255,0.5);font-size:12px;">🔍</span>
+                <input type="range" id="zoomSlider" min="1" max="4" step="0.05" value="1" />
+                <span class="zoom-value" id="zoomValue">1.0×</span>
+            </div>
         </div>
 
         <!-- 控制栏 -->
@@ -548,7 +634,15 @@
                 </svg>
                 <span class="label">翻转</span>
             </button>
-
+            <button class="btn-ctrl zoom-btn" id="zoomToggleBtn" title="显示/隐藏变焦">
+                <svg viewBox="0 0 24 24">
+                    <circle cx="11" cy="11" r="7" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    <line x1="11" y1="8" x2="11" y2="14" />
+                    <line x1="8" y1="11" x2="14" y2="11" />
+                </svg>
+                <span class="label">变焦</span>
+            </button>
             <button class="btn-ctrl fullscreen" id="fullscreenBtn">
                 <svg viewBox="0 0 24 24">
                     <polyline points="15 3 21 3 21 9" />
@@ -558,7 +652,6 @@
                 </svg>
                 <span class="label">全屏</span>
             </button>
-
             <button class="btn-ctrl danger" id="stopBtn">
                 <svg viewBox="0 0 24 24">
                     <circle cx="12" cy="12" r="10" />
@@ -574,30 +667,52 @@
         (function() {
             'use strict';
 
-            // === DOM 引用 ===
+            // === DOM ===
             const video = document.getElementById('video');
+            const videoContainer = document.getElementById('videoContainer');
             const wrapper = document.getElementById('videoWrapper');
             const placeholder = document.getElementById('placeholder');
             const startBtn = document.getElementById('startBtn');
             const stopBtn = document.getElementById('stopBtn');
             const fullscreenBtn = document.getElementById('fullscreenBtn');
             const switchCamBtn = document.getElementById('switchCamBtn');
+            const zoomToggleBtn = document.getElementById('zoomToggleBtn');
+            const zoomControl = document.getElementById('zoomControl');
+            const zoomSlider = document.getElementById('zoomSlider');
+            const zoomValue = document.getElementById('zoomValue');
             const controls = document.getElementById('controls');
             const status = document.getElementById('status');
             const errorMsg = document.getElementById('errorMsg');
 
             let stream = null;
             let isStreaming = false;
-            let currentFacingMode = 'user'; // 'user' 或 'environment'
-            let isFront = true; // 是否前摄
+            let currentFacingMode = 'user';
+            let isFront = true;
+            let zoomControlVisible = false;
+            let currentZoom = 1;
 
-            // === 工具函数 ===
+            // === 平移状态 ===
+            let panX = 0; // 平移偏移量 (百分比, -50% ~ 50%)
+            let panY = 0;
+            const MAX_PAN = 50; // 最大偏移百分比
+
+            // 拖拽相关
+            let isDragging = false;
+            let dragStartX = 0;
+            let dragStartY = 0;
+            let dragStartPanX = 0;
+            let dragStartPanY = 0;
+            let lastTapTime = 0;
+
+            // 变焦能力
+            let supportsZoom = false;
+            let zoomCapabilities = null;
+
+            // === 工具 ===
             function showError(msg) {
                 errorMsg.textContent = msg;
                 errorMsg.classList.add('show');
-                setTimeout(() => {
-                    errorMsg.classList.remove('show');
-                }, 5000);
+                setTimeout(() => { errorMsg.classList.remove('show'); }, 5000);
             }
 
             function setLoading(loading) {
@@ -610,22 +725,143 @@
                 }
             }
 
-            // 更新镜像：前摄镜像，后摄不镜像 (更自然的体验)
             function updateMirror() {
-                if (isFront) {
-                    video.style.transform = 'scaleX(-1)';
-                } else {
-                    video.style.transform = 'scaleX(1)';
+                // 镜像由 CSS transform 控制，但需要保留平移和缩放
+                applyTransform();
+            }
+
+            // === 核心：应用 transform (镜像 + 缩放 + 平移) ===
+            function applyTransform() {
+                const scale = currentZoom;
+                const mirror = isFront ? -1 : 1;
+                // 平移量 (像素) — 基于容器尺寸动态计算
+                const containerRect = videoContainer.getBoundingClientRect();
+                const w = containerRect.width || videoContainer.clientWidth || 640;
+                const h = containerRect.height || videoContainer.clientHeight || 360;
+                // 平移偏移量 (px)
+                const offsetX = (panX / 100) * w;
+                const offsetY = (panY / 100) * h;
+
+                // 视频元素本身的 transform: 先缩放再平移，同时镜像
+                // 注意：缩放和平移都基于元素自身，所以需要先缩放再平移，否则平移量会被缩放
+                // 使用 matrix 或 组合 transform: translate(offsetX, offsetY) scale(scale) scaleX(mirror)
+                // 但是 scaleX(mirror) 与 scale 合并
+                const scaleX = scale * mirror;
+                const scaleY = scale;
+                video.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scaleX}, ${scaleY})`;
+                // 保证 object-fit: cover 且不溢出 (容器 overflow hidden)
+            }
+
+            // === 更新变焦并重置平移 (或保持平移在合理范围) ===
+            function updateZoomUI(value) {
+                const zoom = parseFloat(value);
+                currentZoom = Math.min(Math.max(zoom, parseFloat(zoomSlider.min) || 1), parseFloat(zoomSlider.max) || 4);
+                zoomValue.textContent = currentZoom.toFixed(1) + '×';
+                zoomSlider.value = currentZoom;
+                applyZoom(currentZoom);
+            }
+
+            async function applyZoom(zoom) {
+                if (!stream) {
+                    // 如果没流，只更新UI
+                    applyTransform();
+                    return;
+                }
+                try {
+                    const track = stream.getVideoTracks()[0];
+                    if (track && track.getCapabilities && track.getCapabilities().zoom) {
+                        const cap = track.getCapabilities();
+                        const min = cap.zoom.min || 1;
+                        const max = cap.zoom.max || 4;
+                        const constrained = Math.min(Math.max(zoom, min), max);
+                        await track.applyConstraints({
+                            advanced: [{ zoom: constrained }]
+                        });
+                        currentZoom = constrained;
+                        zoomValue.textContent = constrained.toFixed(1) + '×';
+                        zoomSlider.value = constrained;
+                        // 硬件变焦时，不需要CSS缩放，但需要保留平移和镜像
+                        // 硬件变焦时，视频本身已放大，我们只需要平移镜像
+                        // 但平移依然有效
+                        applyTransform();
+                    } else {
+                        // CSS 缩放模拟
+                        const scale = Math.min(Math.max(zoom, 1), 4);
+                        currentZoom = scale;
+                        zoomValue.textContent = scale.toFixed(1) + '×';
+                        zoomSlider.value = scale;
+                        applyTransform();
+                    }
+                } catch (e) {
+                    console.warn('变焦应用失败，使用CSS降级:', e);
+                    const scale = Math.min(Math.max(zoom, 1), 4);
+                    currentZoom = scale;
+                    zoomValue.textContent = scale.toFixed(1) + '×';
+                    zoomSlider.value = scale;
+                    applyTransform();
                 }
             }
 
-            // === 核心：启动摄像头 (可指定 facingMode) ===
-            async function startCamera(facingMode = 'user') {
-                if (isStreaming) {
-                    // 如果已经在流，先停止再重新启动（切换摄像头时）
-                    stopCameraTracks();
+            // 检测变焦能力
+            async function detectZoomCapability() {
+                try {
+                    let tempStream = null;
+                    let track = null;
+                    if (stream) {
+                        track = stream.getVideoTracks()[0];
+                    } else {
+                        tempStream = await navigator.mediaDevices.getUserMedia({
+                            video: { facingMode: 'user' },
+                            audio: false
+                        });
+                        track = tempStream.getVideoTracks()[0];
+                    }
+                    if (track && track.getCapabilities) {
+                        const caps = track.getCapabilities();
+                        if (caps.zoom && caps.zoom.max > 1) {
+                            supportsZoom = true;
+                            zoomCapabilities = caps;
+                            const min = caps.zoom.min || 1;
+                            const max = caps.zoom.max || 4;
+                            zoomSlider.min = min;
+                            zoomSlider.max = max;
+                            zoomSlider.step = caps.zoom.step || 0.05;
+                            zoomSlider.value = 1;
+                            zoomValue.textContent = '1.0×';
+                            currentZoom = 1;
+                        } else {
+                            zoomSlider.min = 1;
+                            zoomSlider.max = 4;
+                            zoomSlider.step = 0.05;
+                            zoomSlider.value = 1;
+                            zoomValue.textContent = '1.0×';
+                            currentZoom = 1;
+                        }
+                    }
+                    if (tempStream) {
+                        tempStream.getTracks().forEach(t => t.stop());
+                    }
+                } catch (e) {
+                    console.warn('变焦检测失败，使用CSS降级');
+                    zoomSlider.min = 1;
+                    zoomSlider.max = 4;
+                    zoomSlider.step = 0.05;
+                    zoomSlider.value = 1;
+                    zoomValue.textContent = '1.0×';
+                    currentZoom = 1;
                 }
+            }
 
+            // === 重置平移 ===
+            function resetPan() {
+                panX = 0;
+                panY = 0;
+                applyTransform();
+            }
+
+            // === 启动摄像头 ===
+            async function startCamera(facingMode = 'user') {
+                if (isStreaming) stopCameraTracks();
                 setLoading(true);
                 errorMsg.classList.remove('show');
 
@@ -638,14 +874,13 @@
                         },
                         audio: false
                     };
-
                     stream = await navigator.mediaDevices.getUserMedia(constraints);
                     video.srcObject = stream;
                     await video.play();
 
-                    // 记录当前 facing
                     currentFacingMode = facingMode;
                     isFront = (facingMode === 'user');
+                    resetPan(); // 重置平移
                     updateMirror();
 
                     isStreaming = true;
@@ -656,9 +891,12 @@
 
                     setLoading(false);
                     startBtn.querySelector('.btn-text').textContent = '✅ 已启动';
-
-                    // 启用切换按钮
                     switchCamBtn.disabled = false;
+
+                    await detectZoomCapability();
+                    if (zoomControlVisible) zoomControl.classList.add('visible');
+                    await applyZoom(1);
+                    resetPan();
 
                 } catch (err) {
                     console.error('摄像头启动失败:', err);
@@ -676,7 +914,6 @@
                         msg = '🛑 摄像头权限被拒绝，请在浏览器设置中允许访问。';
                     }
                     showError(msg);
-                    // 重置状态
                     isStreaming = false;
                     wrapper.classList.remove('active');
                     placeholder.classList.remove('hidden');
@@ -684,10 +921,11 @@
                     status.classList.remove('visible');
                     startBtn.querySelector('.btn-text').textContent = '📷 启动摄像头';
                     switchCamBtn.disabled = true;
+                    zoomControl.classList.remove('visible');
+                    zoomControlVisible = false;
                 }
             }
 
-            // 停止所有轨道 (不改变UI状态)
             function stopCameraTracks() {
                 if (stream) {
                     stream.getTracks().forEach(track => track.stop());
@@ -697,7 +935,6 @@
                 isStreaming = false;
             }
 
-            // === 停止摄像头 (完整关闭) ===
             function stopCamera() {
                 if (!isStreaming && !stream) return;
                 stopCameraTracks();
@@ -708,43 +945,36 @@
                 startBtn.querySelector('.btn-text').textContent = '📷 启动摄像头';
                 setLoading(false);
                 switchCamBtn.disabled = true;
-
+                zoomControl.classList.remove('visible');
+                zoomControlVisible = false;
                 if (document.fullscreenElement) {
                     document.exitFullscreen().catch(() => {});
                 }
+                video.style.transform = isFront ? 'scaleX(-1)' : 'scaleX(1)';
+                resetPan();
             }
 
-            // === 切换前后摄像头 ===
             async function switchCamera() {
-                if (!isStreaming) {
-                    showError('请先启动摄像头');
-                    return;
-                }
-
-                // 切换 facingMode
+                if (!isStreaming) { showError('请先启动摄像头'); return; }
                 const nextMode = (currentFacingMode === 'user') ? 'environment' : 'user';
-                // 尝试用新模式启动 (内部会停止旧流)
                 await startCamera(nextMode);
             }
 
-            // === 全屏切换 ===
             function toggleFullscreen() {
-                if (!isStreaming) {
-                    showError('请先启动摄像头');
-                    return;
-                }
-
+                if (!isStreaming) { showError('请先启动摄像头'); return; }
                 if (!document.fullscreenElement) {
-                    wrapper.requestFullscreen().catch(err => {
-                        console.warn('全屏请求被拒绝:', err);
-                        showError('无法进入全屏模式，请手动点击浏览器全屏按钮');
-                    });
+                    wrapper.requestFullscreen().catch(err => { showError('无法进入全屏模式'); });
                 } else {
                     document.exitFullscreen().catch(() => {});
                 }
             }
 
-            // === 全屏变化事件 ===
+            function toggleZoomControl() {
+                if (!isStreaming) { showError('请先启动摄像头'); return; }
+                zoomControlVisible = !zoomControlVisible;
+                zoomControl.classList.toggle('visible', zoomControlVisible);
+            }
+
             function onFullscreenChange() {
                 const isFull = !!document.fullscreenElement;
                 const label = fullscreenBtn.querySelector('.label');
@@ -755,20 +985,111 @@
                     label.textContent = '全屏';
                     wrapper.style.cursor = '';
                 }
+                // 全屏变化后，重新应用变换以适配尺寸
+                setTimeout(applyTransform, 50);
+            }
+
+            // === 鼠标/触摸 拖拽 (平移) ===
+            function startDrag(e) {
+                if (!isStreaming || currentZoom <= 1.01) return;
+                // 忽略点击变焦控件内部
+                if (e.target.closest('.zoom-control')) return;
+                if (e.target.closest('.controls')) return;
+
+                const point = e.touches ? e.touches[0] : e;
+                isDragging = true;
+                dragStartX = point.clientX;
+                dragStartY = point.clientY;
+                dragStartPanX = panX;
+                dragStartPanY = panY;
+                wrapper.style.cursor = 'grabbing';
+                e.preventDefault();
+            }
+
+            function moveDrag(e) {
+                if (!isDragging) return;
+                const point = e.touches ? e.touches[0] : e;
+                const dx = point.clientX - dragStartX;
+                const dy = point.clientY - dragStartY;
+
+                // 容器尺寸
+                const rect = videoContainer.getBoundingClientRect();
+                const w = rect.width || videoContainer.clientWidth || 640;
+                const h = rect.height || videoContainer.clientHeight || 360;
+
+                // 将像素位移转换为百分比偏移，并限制范围
+                const deltaX = (dx / w) * 100 * 2; // 系数调节手感
+                const deltaY = (dy / h) * 100 * 2;
+
+                let newPanX = Math.min(Math.max(dragStartPanX + deltaX, -MAX_PAN), MAX_PAN);
+                let newPanY = Math.min(Math.max(dragStartPanY + deltaY, -MAX_PAN), MAX_PAN);
+
+                // 根据缩放比例限制最大平移量：缩放越大，可移动范围越小，防止露出黑边
+                const scaleFactor = 1 / (currentZoom || 1);
+                const limit = MAX_PAN * scaleFactor;
+                newPanX = Math.min(Math.max(newPanX, -limit), limit);
+                newPanY = Math.min(Math.max(newPanY, -limit), limit);
+
+                panX = newPanX;
+                panY = newPanY;
+                applyTransform();
+                e.preventDefault();
+            }
+
+            function endDrag(e) {
+                if (isDragging) {
+                    isDragging = false;
+                    wrapper.style.cursor = '';
+                    // 双击检测 (仅点击)
+                    const now = Date.now();
+                    if (now - lastTapTime < 300 && currentZoom > 1.01) {
+                        // 双击重置平移
+                        resetPan();
+                    }
+                    lastTapTime = now;
+                }
             }
 
             // === 键盘快捷键 ===
             function onKeydown(e) {
-                if (e.key === 'f' || e.key === 'F') {
-                    e.preventDefault();
-                    toggleFullscreen();
-                }
-                if (e.key === 'c' || e.key === 'C') {
-                    e.preventDefault();
-                    switchCamera();
-                }
+                if (e.key === 'f' || e.key === 'F') { e.preventDefault();
+                    toggleFullscreen(); }
+                if (e.key === 'c' || e.key === 'C') { e.preventDefault();
+                    switchCamera(); }
+                if (e.key === 'z' || e.key === 'Z') { e.preventDefault();
+                    toggleZoomControl(); }
                 if (e.key === 'Escape' && document.fullscreenElement) {
                     setTimeout(onFullscreenChange, 100);
+                }
+                if (e.key === '+' || e.key === '=') {
+                    e.preventDefault();
+                    if (isStreaming) {
+                        let newZoom = Math.min(parseFloat(zoomSlider.max) || 4, currentZoom + 0.2);
+                        updateZoomUI(newZoom);
+                    }
+                }
+                if (e.key === '-' || e.key === '_') {
+                    e.preventDefault();
+                    if (isStreaming) {
+                        let newZoom = Math.max(parseFloat(zoomSlider.min) || 1, currentZoom - 0.2);
+                        updateZoomUI(newZoom);
+                    }
+                }
+                // 方向键平移
+                if (isStreaming && currentZoom > 1.01) {
+                    const step = 2;
+                    if (e.key === 'ArrowUp') { e.preventDefault();
+                        panY = Math.min(Math.max(panY - step, -MAX_PAN), MAX_PAN);
+                        applyTransform(); }
+                    if (e.key === 'ArrowDown') { e.preventDefault();
+                        panY = Math.min(Math.max(panY + step, -MAX_PAN), MAX_PAN);
+                        applyTransform(); }
+                    if (e.key === 'ArrowLeft') { e.preventDefault();
+                        panX = Math.min(Math.max(panX - step, -MAX_PAN), MAX_PAN);
+                        applyTransform(); }
+                    if (e.key === 'ArrowRight') { e.preventDefault();
+                        panX = Math.min(Math.max(panX + step, -MAX_PAN), MAX_PAN);
+                        applyTransform(); }
                 }
             }
 
@@ -777,8 +1098,24 @@
             stopBtn.addEventListener('click', stopCamera);
             fullscreenBtn.addEventListener('click', toggleFullscreen);
             switchCamBtn.addEventListener('click', switchCamera);
+            zoomToggleBtn.addEventListener('click', toggleZoomControl);
 
-            // 全屏事件兼容
+            zoomSlider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                updateZoomUI(val);
+            });
+
+            // 鼠标拖拽
+            videoContainer.addEventListener('mousedown', startDrag);
+            document.addEventListener('mousemove', moveDrag);
+            document.addEventListener('mouseup', endDrag);
+
+            // 触摸拖拽
+            videoContainer.addEventListener('touchstart', startDrag, { passive: false });
+            document.addEventListener('touchmove', moveDrag, { passive: false });
+            document.addEventListener('touchend', endDrag, { passive: false });
+
+            // 全屏变化
             document.addEventListener('fullscreenchange', onFullscreenChange);
             document.addEventListener('webkitfullscreenchange', onFullscreenChange);
             document.addEventListener('mozfullscreenchange', onFullscreenChange);
@@ -786,40 +1123,34 @@
 
             document.addEventListener('keydown', onKeydown);
 
-            // 双击切换全屏
-            video.addEventListener('dblclick', () => {
-                if (isStreaming) toggleFullscreen();
-            });
+            // 双击重置平移 (在 endDrag 中处理)
 
-            // 页面关闭释放资源
+            // 窗口resize时重新应用变换
+            window.addEventListener('resize', () => { applyTransform(); });
+
             window.addEventListener('beforeunload', () => {
-                if (stream) {
-                    stream.getTracks().forEach(track => track.stop());
-                }
-                if (video.srcObject) {
-                    video.srcObject = null;
-                }
+                if (stream) { stream.getTracks().forEach(track => track.stop()); }
+                if (video.srcObject) { video.srcObject = null; }
             });
 
-            // 点击占位启动
             placeholder.addEventListener('click', (e) => {
                 if (e.target.closest('.btn')) return;
                 if (!isStreaming) startCamera('user');
             });
 
-            // 提示
-            console.log('📷 快捷键: F = 全屏, C = 切换摄像头');
-
-            // 检测支持
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                showError('您的浏览器不支持摄像头访问，请使用最新版 Chrome / Firefox / Edge');
+                showError('您的浏览器不支持摄像头访问');
                 startBtn.disabled = true;
                 switchCamBtn.disabled = true;
             }
-
-            // 初始禁用切换
             switchCamBtn.disabled = true;
+            zoomControl.classList.remove('visible');
+            zoomControlVisible = false;
 
+            console.log('📷 快捷键: F=全屏, C=切换摄像头, Z=变焦面板, +/-=变焦, 方向键=平移');
+
+            // 暴露 resetPan 以便调试
+            window.resetPan = resetPan;
         })();
     </script>
 
