@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>摄像头 · 变焦 + 平移</title>
+    <title>摄像头 · 耳返 + 双指缩放</title>
     <style>
         /* === 全局重置 === */
         *,
@@ -52,14 +52,13 @@
             transition: box-shadow 0.3s ease;
             flex-shrink: 0;
             touch-action: none;
-            /* 由 JS 控制触摸行为 */;
         }
 
         .video-wrapper.active {
             box-shadow: 0 25px 60px rgba(0, 0, 0, 0.9), 0 0 0 2px rgba(99, 140, 255, 0.25);
         }
 
-        /* === 视频容器 (用于裁剪 + 平移) === */
+        /* === 视频容器 (用于裁剪+平移) === */
         .video-container {
             position: absolute;
             top: 0;
@@ -71,6 +70,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            touch-action: none;
         }
 
         #video {
@@ -80,10 +80,8 @@
             display: block;
             background: #0d0d14;
             transform: scaleX(-1);
-            /* 默认镜像，由 JS 控制 */
-            transition: none;
             will-change: transform;
-            /* 开启GPU加速 */;
+            touch-action: none;
         }
 
         /* === 占位 / 启动界面 === */
@@ -289,6 +287,20 @@
         .controls .btn-ctrl.zoom-btn:hover {
             background: rgba(255, 200, 50, 0.2);
         }
+        .controls .btn-ctrl.mic-btn {
+            background: rgba(100, 200, 255, 0.12);
+            border-color: rgba(100, 200, 255, 0.15);
+            color: #7ac7ff;
+        }
+        .controls .btn-ctrl.mic-btn:hover {
+            background: rgba(100, 200, 255, 0.2);
+        }
+        .controls .btn-ctrl.mic-btn.active {
+            background: rgba(100, 200, 255, 0.25);
+            border-color: rgba(100, 200, 255, 0.4);
+            color: #7ac7ff;
+            box-shadow: 0 0 20px rgba(100, 200, 255, 0.15);
+        }
         .controls .btn-ctrl.danger {
             color: #ff6b7a;
             border-color: rgba(255, 107, 122, 0.15);
@@ -297,7 +309,7 @@
             background: rgba(255, 107, 122, 0.12);
         }
 
-        /* === 变焦控件 (在视频区域左下角) === */
+        /* === 变焦滑块 (左下) === */
         .zoom-control {
             position: absolute;
             bottom: 70px;
@@ -600,7 +612,7 @@
                     </svg>
                 </div>
                 <h2>打开摄像头</h2>
-                <p>点击下方按钮，授权后即可看到实时画面<br />支持变焦、平移 · 前后摄</p>
+                <p>双指缩放 · 拖拽平移 · 耳返监听</p>
                 <button class="btn" id="startBtn">
                     <span class="spinner"></span>
                     <span class="btn-text">📷 启动摄像头</span>
@@ -616,7 +628,7 @@
                 <span>直播中</span>
             </div>
 
-            <!-- 变焦控件 -->
+            <!-- 变焦滑块 -->
             <div class="zoom-control" id="zoomControl">
                 <span style="color:rgba(255,255,255,0.5);font-size:12px;">🔍</span>
                 <input type="range" id="zoomSlider" min="1" max="4" step="0.05" value="1" />
@@ -642,6 +654,15 @@
                     <line x1="8" y1="11" x2="14" y2="11" />
                 </svg>
                 <span class="label">变焦</span>
+            </button>
+            <button class="btn-ctrl mic-btn" id="micBtn" title="耳返开关">
+                <svg viewBox="0 0 24 24">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <line x1="12" y1="19" x2="12" y2="23" />
+                    <line x1="8" y1="23" x2="16" y2="23" />
+                </svg>
+                <span class="label">耳返</span>
             </button>
             <button class="btn-ctrl fullscreen" id="fullscreenBtn">
                 <svg viewBox="0 0 24 24">
@@ -680,6 +701,7 @@
             const zoomControl = document.getElementById('zoomControl');
             const zoomSlider = document.getElementById('zoomSlider');
             const zoomValue = document.getElementById('zoomValue');
+            const micBtn = document.getElementById('micBtn');
             const controls = document.getElementById('controls');
             const status = document.getElementById('status');
             const errorMsg = document.getElementById('errorMsg');
@@ -692,17 +714,27 @@
             let currentZoom = 1;
 
             // === 平移状态 ===
-            let panX = 0; // 平移偏移量 (百分比, -50% ~ 50%)
+            let panX = 0;
             let panY = 0;
-            const MAX_PAN = 50; // 最大偏移百分比
+            const MAX_PAN = 50;
 
-            // 拖拽相关
+            // === 拖拽/双指 状态 ===
             let isDragging = false;
-            let dragStartX = 0;
-            let dragStartY = 0;
-            let dragStartPanX = 0;
-            let dragStartPanY = 0;
+            let dragStartX = 0,
+                dragStartY = 0;
+            let dragStartPanX = 0,
+                dragStartPanY = 0;
+            let isPinching = false;
+            let pinchStartDist = 0;
+            let pinchStartZoom = 1;
             let lastTapTime = 0;
+
+            // === 耳返相关 ===
+            let audioContext = null;
+            let audioSource = null;
+            let audioStream = null;
+            let isMicOn = false;
+            let gainNode = null;
 
             // 变焦能力
             let supportsZoom = false;
@@ -725,37 +757,28 @@
                 }
             }
 
-            function updateMirror() {
-                // 镜像由 CSS transform 控制，但需要保留平移和缩放
-                applyTransform();
-            }
-
-            // === 核心：应用 transform (镜像 + 缩放 + 平移) ===
+            // === 应用变换 ===
             function applyTransform() {
                 const scale = currentZoom;
                 const mirror = isFront ? -1 : 1;
-                // 平移量 (像素) — 基于容器尺寸动态计算
-                const containerRect = videoContainer.getBoundingClientRect();
-                const w = containerRect.width || videoContainer.clientWidth || 640;
-                const h = containerRect.height || videoContainer.clientHeight || 360;
-                // 平移偏移量 (px)
+                const rect = videoContainer.getBoundingClientRect();
+                const w = rect.width || videoContainer.clientWidth || 640;
+                const h = rect.height || videoContainer.clientHeight || 360;
+
                 const offsetX = (panX / 100) * w;
                 const offsetY = (panY / 100) * h;
 
-                // 视频元素本身的 transform: 先缩放再平移，同时镜像
-                // 注意：缩放和平移都基于元素自身，所以需要先缩放再平移，否则平移量会被缩放
-                // 使用 matrix 或 组合 transform: translate(offsetX, offsetY) scale(scale) scaleX(mirror)
-                // 但是 scaleX(mirror) 与 scale 合并
                 const scaleX = scale * mirror;
                 const scaleY = scale;
                 video.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scaleX}, ${scaleY})`;
-                // 保证 object-fit: cover 且不溢出 (容器 overflow hidden)
             }
 
-            // === 更新变焦并重置平移 (或保持平移在合理范围) ===
+            // === 更新变焦 ===
             function updateZoomUI(value) {
                 const zoom = parseFloat(value);
-                currentZoom = Math.min(Math.max(zoom, parseFloat(zoomSlider.min) || 1), parseFloat(zoomSlider.max) || 4);
+                const min = parseFloat(zoomSlider.min) || 1;
+                const max = parseFloat(zoomSlider.max) || 4;
+                currentZoom = Math.min(Math.max(zoom, min), max);
                 zoomValue.textContent = currentZoom.toFixed(1) + '×';
                 zoomSlider.value = currentZoom;
                 applyZoom(currentZoom);
@@ -763,7 +786,6 @@
 
             async function applyZoom(zoom) {
                 if (!stream) {
-                    // 如果没流，只更新UI
                     applyTransform();
                     return;
                 }
@@ -780,12 +802,8 @@
                         currentZoom = constrained;
                         zoomValue.textContent = constrained.toFixed(1) + '×';
                         zoomSlider.value = constrained;
-                        // 硬件变焦时，不需要CSS缩放，但需要保留平移和镜像
-                        // 硬件变焦时，视频本身已放大，我们只需要平移镜像
-                        // 但平移依然有效
                         applyTransform();
                     } else {
-                        // CSS 缩放模拟
                         const scale = Math.min(Math.max(zoom, 1), 4);
                         currentZoom = scale;
                         zoomValue.textContent = scale.toFixed(1) + '×';
@@ -793,7 +811,6 @@
                         applyTransform();
                     }
                 } catch (e) {
-                    console.warn('变焦应用失败，使用CSS降级:', e);
                     const scale = Math.min(Math.max(zoom, 1), 4);
                     currentZoom = scale;
                     zoomValue.textContent = scale.toFixed(1) + '×';
@@ -802,7 +819,6 @@
                 }
             }
 
-            // 检测变焦能力
             async function detectZoomCapability() {
                 try {
                     let tempStream = null;
@@ -842,7 +858,6 @@
                         tempStream.getTracks().forEach(t => t.stop());
                     }
                 } catch (e) {
-                    console.warn('变焦检测失败，使用CSS降级');
                     zoomSlider.min = 1;
                     zoomSlider.max = 4;
                     zoomSlider.step = 0.05;
@@ -852,16 +867,120 @@
                 }
             }
 
-            // === 重置平移 ===
             function resetPan() {
                 panX = 0;
                 panY = 0;
                 applyTransform();
             }
 
+            // ========== 耳返功能 ==========
+            async function toggleMic() {
+                if (!isStreaming) {
+                    showError('请先启动摄像头');
+                    return;
+                }
+
+                if (isMicOn) {
+                    // 关闭耳返
+                    stopEarReturn();
+                    micBtn.classList.remove('active');
+                    isMicOn = false;
+                    micBtn.querySelector('.label').textContent = '耳返';
+                    return;
+                }
+
+                // 开启耳返
+                try {
+                    // 获取麦克风
+                    const micStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        }
+                    });
+
+                    audioStream = micStream;
+
+                    // 创建 AudioContext
+                    if (!audioContext) {
+                        audioContext = new(window.AudioContext || window.webkitAudioContext)();
+                    }
+
+                    // 如果 context 是 suspended，恢复
+                    if (audioContext.state === 'suspended') {
+                        await audioContext.resume();
+                    }
+
+                    audioSource = audioContext.createMediaStreamSource(micStream);
+
+                    // 增益节点 (可调节音量)
+                    gainNode = audioContext.createGain();
+                    gainNode.gain.value = 1.0;
+
+                    // 连接: source -> gain -> destination (扬声器/耳机)
+                    audioSource.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+
+                    isMicOn = true;
+                    micBtn.classList.add('active');
+                    micBtn.querySelector('.label').textContent = '耳返●';
+
+                    console.log('🔊 耳返已开启');
+
+                } catch (err) {
+                    console.error('耳返启动失败:', err);
+                    let msg = '无法开启耳返';
+                    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                        msg = '🛑 麦克风权限被拒绝，请在浏览器设置中允许访问。';
+                    } else if (err.name === 'NotFoundError') {
+                        msg = '🎤 未检测到麦克风设备。';
+                    } else {
+                        msg = '🎤 耳返启动失败: ' + err.message;
+                    }
+                    showError(msg);
+                    isMicOn = false;
+                    micBtn.classList.remove('active');
+                    micBtn.querySelector('.label').textContent = '耳返';
+                }
+            }
+
+            function stopEarReturn() {
+                if (audioSource) {
+                    try {
+                        audioSource.disconnect();
+                    } catch (e) {}
+                    audioSource = null;
+                }
+                if (gainNode) {
+                    try {
+                        gainNode.disconnect();
+                    } catch (e) {}
+                    gainNode = null;
+                }
+                if (audioStream) {
+                    audioStream.getTracks().forEach(track => track.stop());
+                    audioStream = null;
+                }
+                // 不销毁 audioContext，保留以便复用
+                isMicOn = false;
+                console.log('🔇 耳返已关闭');
+            }
+
+            // 在停止摄像头时同时关闭耳返
+            function stopCameraAndMic() {
+                stopEarReturn();
+                micBtn.classList.remove('active');
+                micBtn.querySelector('.label').textContent = '耳返';
+                isMicOn = false;
+            }
+
             // === 启动摄像头 ===
             async function startCamera(facingMode = 'user') {
-                if (isStreaming) stopCameraTracks();
+                if (isStreaming) {
+                    stopCameraTracks();
+                    stopCameraAndMic();
+                }
                 setLoading(true);
                 errorMsg.classList.remove('show');
 
@@ -880,8 +999,8 @@
 
                     currentFacingMode = facingMode;
                     isFront = (facingMode === 'user');
-                    resetPan(); // 重置平移
-                    updateMirror();
+                    resetPan();
+                    applyTransform();
 
                     isStreaming = true;
                     wrapper.classList.add('active');
@@ -938,6 +1057,7 @@
             function stopCamera() {
                 if (!isStreaming && !stream) return;
                 stopCameraTracks();
+                stopCameraAndMic();
                 wrapper.classList.remove('active');
                 placeholder.classList.remove('hidden');
                 controls.classList.remove('visible');
@@ -956,6 +1076,13 @@
 
             async function switchCamera() {
                 if (!isStreaming) { showError('请先启动摄像头'); return; }
+                // 关闭耳返再切换
+                if (isMicOn) {
+                    stopEarReturn();
+                    micBtn.classList.remove('active');
+                    micBtn.querySelector('.label').textContent = '耳返';
+                    isMicOn = false;
+                }
                 const nextMode = (currentFacingMode === 'user') ? 'environment' : 'user';
                 await startCamera(nextMode);
             }
@@ -985,46 +1112,141 @@
                     label.textContent = '全屏';
                     wrapper.style.cursor = '';
                 }
-                // 全屏变化后，重新应用变换以适配尺寸
                 setTimeout(applyTransform, 50);
             }
 
-            // === 鼠标/触摸 拖拽 (平移) ===
-            function startDrag(e) {
-                if (!isStreaming || currentZoom <= 1.01) return;
-                // 忽略点击变焦控件内部
+            // ========== 触摸事件 (双指缩放 + 拖拽) ==========
+            function getDistance(touches) {
+                if (touches.length < 2) return 0;
+                const dx = touches[0].clientX - touches[1].clientX;
+                const dy = touches[0].clientY - touches[1].clientY;
+                return Math.sqrt(dx * dx + dy * dy);
+            }
+
+            function onTouchStart(e) {
+                if (!isStreaming) return;
                 if (e.target.closest('.zoom-control')) return;
                 if (e.target.closest('.controls')) return;
 
-                const point = e.touches ? e.touches[0] : e;
+                const touches = e.touches;
+                if (touches.length === 2) {
+                    isPinching = true;
+                    pinchStartDist = getDistance(touches);
+                    pinchStartZoom = currentZoom;
+                    isDragging = false;
+                    e.preventDefault();
+                    return;
+                }
+
+                if (touches.length === 1) {
+                    if (currentZoom <= 1.01) {
+                        const now = Date.now();
+                        if (now - lastTapTime < 300) {
+                            resetPan();
+                            lastTapTime = 0;
+                            return;
+                        }
+                        lastTapTime = now;
+                        return;
+                    }
+                    isDragging = true;
+                    const touch = touches[0];
+                    dragStartX = touch.clientX;
+                    dragStartY = touch.clientY;
+                    dragStartPanX = panX;
+                    dragStartPanY = panY;
+                    wrapper.style.cursor = 'grabbing';
+                    e.preventDefault();
+                }
+            }
+
+            function onTouchMove(e) {
+                if (!isStreaming) return;
+                const touches = e.touches;
+
+                if (isPinching && touches.length === 2) {
+                    const dist = getDistance(touches);
+                    if (dist === 0) return;
+                    const scaleFactor = dist / pinchStartDist;
+                    let newZoom = pinchStartZoom * scaleFactor;
+                    const min = parseFloat(zoomSlider.min) || 1;
+                    const max = parseFloat(zoomSlider.max) || 4;
+                    newZoom = Math.min(Math.max(newZoom, min), max);
+                    currentZoom = newZoom;
+                    zoomValue.textContent = newZoom.toFixed(1) + '×';
+                    zoomSlider.value = newZoom;
+                    applyZoom(newZoom);
+                    e.preventDefault();
+                    return;
+                }
+
+                if (isDragging && touches.length === 1) {
+                    const touch = touches[0];
+                    const dx = touch.clientX - dragStartX;
+                    const dy = touch.clientY - dragStartY;
+
+                    const rect = videoContainer.getBoundingClientRect();
+                    const w = rect.width || videoContainer.clientWidth || 640;
+                    const h = rect.height || videoContainer.clientHeight || 360;
+
+                    const deltaX = (dx / w) * 100 * 2;
+                    const deltaY = (dy / h) * 100 * 2;
+
+                    let newPanX = Math.min(Math.max(dragStartPanX + deltaX, -MAX_PAN), MAX_PAN);
+                    let newPanY = Math.min(Math.max(dragStartPanY + deltaY, -MAX_PAN), MAX_PAN);
+
+                    const scaleFactor = 1 / (currentZoom || 1);
+                    const limit = MAX_PAN * scaleFactor;
+                    newPanX = Math.min(Math.max(newPanX, -limit), limit);
+                    newPanY = Math.min(Math.max(newPanY, -limit), limit);
+
+                    panX = newPanX;
+                    panY = newPanY;
+                    applyTransform();
+                    e.preventDefault();
+                }
+            }
+
+            function onTouchEnd(e) {
+                if (isPinching) {
+                    isPinching = false;
+                }
+                if (isDragging) {
+                    isDragging = false;
+                    wrapper.style.cursor = '';
+                }
+            }
+
+            // 鼠标拖拽
+            function onMouseDown(e) {
+                if (!isStreaming || currentZoom <= 1.01) return;
+                if (e.target.closest('.zoom-control')) return;
+                if (e.target.closest('.controls')) return;
+
                 isDragging = true;
-                dragStartX = point.clientX;
-                dragStartY = point.clientY;
+                dragStartX = e.clientX;
+                dragStartY = e.clientY;
                 dragStartPanX = panX;
                 dragStartPanY = panY;
                 wrapper.style.cursor = 'grabbing';
                 e.preventDefault();
             }
 
-            function moveDrag(e) {
+            function onMouseMove(e) {
                 if (!isDragging) return;
-                const point = e.touches ? e.touches[0] : e;
-                const dx = point.clientX - dragStartX;
-                const dy = point.clientY - dragStartY;
+                const dx = e.clientX - dragStartX;
+                const dy = e.clientY - dragStartY;
 
-                // 容器尺寸
                 const rect = videoContainer.getBoundingClientRect();
                 const w = rect.width || videoContainer.clientWidth || 640;
                 const h = rect.height || videoContainer.clientHeight || 360;
 
-                // 将像素位移转换为百分比偏移，并限制范围
-                const deltaX = (dx / w) * 100 * 2; // 系数调节手感
+                const deltaX = (dx / w) * 100 * 2;
                 const deltaY = (dy / h) * 100 * 2;
 
                 let newPanX = Math.min(Math.max(dragStartPanX + deltaX, -MAX_PAN), MAX_PAN);
                 let newPanY = Math.min(Math.max(dragStartPanY + deltaY, -MAX_PAN), MAX_PAN);
 
-                // 根据缩放比例限制最大平移量：缩放越大，可移动范围越小，防止露出黑边
                 const scaleFactor = 1 / (currentZoom || 1);
                 const limit = MAX_PAN * scaleFactor;
                 newPanX = Math.min(Math.max(newPanX, -limit), limit);
@@ -1036,17 +1258,10 @@
                 e.preventDefault();
             }
 
-            function endDrag(e) {
+            function onMouseUp(e) {
                 if (isDragging) {
                     isDragging = false;
                     wrapper.style.cursor = '';
-                    // 双击检测 (仅点击)
-                    const now = Date.now();
-                    if (now - lastTapTime < 300 && currentZoom > 1.01) {
-                        // 双击重置平移
-                        resetPan();
-                    }
-                    lastTapTime = now;
                 }
             }
 
@@ -1058,6 +1273,8 @@
                     switchCamera(); }
                 if (e.key === 'z' || e.key === 'Z') { e.preventDefault();
                     toggleZoomControl(); }
+                if (e.key === 'm' || e.key === 'M') { e.preventDefault();
+                    toggleMic(); }
                 if (e.key === 'Escape' && document.fullscreenElement) {
                     setTimeout(onFullscreenChange, 100);
                 }
@@ -1075,7 +1292,6 @@
                         updateZoomUI(newZoom);
                     }
                 }
-                // 方向键平移
                 if (isStreaming && currentZoom > 1.01) {
                     const step = 2;
                     if (e.key === 'ArrowUp') { e.preventDefault();
@@ -1099,23 +1315,25 @@
             fullscreenBtn.addEventListener('click', toggleFullscreen);
             switchCamBtn.addEventListener('click', switchCamera);
             zoomToggleBtn.addEventListener('click', toggleZoomControl);
+            micBtn.addEventListener('click', toggleMic);
 
             zoomSlider.addEventListener('input', (e) => {
                 const val = parseFloat(e.target.value);
                 updateZoomUI(val);
             });
 
-            // 鼠标拖拽
-            videoContainer.addEventListener('mousedown', startDrag);
-            document.addEventListener('mousemove', moveDrag);
-            document.addEventListener('mouseup', endDrag);
+            // 触摸
+            videoContainer.addEventListener('touchstart', onTouchStart, { passive: false });
+            videoContainer.addEventListener('touchmove', onTouchMove, { passive: false });
+            videoContainer.addEventListener('touchend', onTouchEnd, { passive: false });
+            videoContainer.addEventListener('touchcancel', onTouchEnd, { passive: false });
 
-            // 触摸拖拽
-            videoContainer.addEventListener('touchstart', startDrag, { passive: false });
-            document.addEventListener('touchmove', moveDrag, { passive: false });
-            document.addEventListener('touchend', endDrag, { passive: false });
+            // 鼠标
+            videoContainer.addEventListener('mousedown', onMouseDown);
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
 
-            // 全屏变化
+            // 全屏
             document.addEventListener('fullscreenchange', onFullscreenChange);
             document.addEventListener('webkitfullscreenchange', onFullscreenChange);
             document.addEventListener('mozfullscreenchange', onFullscreenChange);
@@ -1123,12 +1341,10 @@
 
             document.addEventListener('keydown', onKeydown);
 
-            // 双击重置平移 (在 endDrag 中处理)
-
-            // 窗口resize时重新应用变换
             window.addEventListener('resize', () => { applyTransform(); });
 
             window.addEventListener('beforeunload', () => {
+                stopEarReturn();
                 if (stream) { stream.getTracks().forEach(track => track.stop()); }
                 if (video.srcObject) { video.srcObject = null; }
             });
@@ -1142,15 +1358,14 @@
                 showError('您的浏览器不支持摄像头访问');
                 startBtn.disabled = true;
                 switchCamBtn.disabled = true;
+                micBtn.disabled = true;
             }
             switchCamBtn.disabled = true;
             zoomControl.classList.remove('visible');
             zoomControlVisible = false;
 
-            console.log('📷 快捷键: F=全屏, C=切换摄像头, Z=变焦面板, +/-=变焦, 方向键=平移');
-
-            // 暴露 resetPan 以便调试
-            window.resetPan = resetPan;
+            console.log('📷 快捷键: F=全屏, C=切换摄像头, Z=变焦, M=耳返, +/-=变焦, 方向键=平移');
+            console.log('🖐️ 双指捏合缩放 · 单指拖拽平移');
         })();
     </script>
 
